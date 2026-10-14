@@ -26,9 +26,9 @@ export const GRAPHICS_PROFILES: Record<GraphicsQualityPreset, GraphicsQualityPro
     shadowsEnabled: true,
     shadowMapSize: 512,
     heatHazeEnabled: false,
-    cinematicOpticsEnabled: false,
-    particleBudgetMultiplier: 0.35,
-    description: 'Máxima fluidez con sombras básicas optimizadas.',
+    cinematicOpticsEnabled: true,
+    particleBudgetMultiplier: 0.5,
+    description: 'Máxima fluidez con sombras y óptica cinemática optimizadas.',
   },
   medium: {
     id: 'medium',
@@ -38,10 +38,10 @@ export const GRAPHICS_PROFILES: Record<GraphicsQualityPreset, GraphicsQualityPro
     pixelRatioCap: 1.25,
     shadowsEnabled: true,
     shadowMapSize: 1024,
-    heatHazeEnabled: false,
+    heatHazeEnabled: true,
     cinematicOpticsEnabled: true,
-    particleBudgetMultiplier: 0.65,
-    description: 'Sombras nítidas de 1024px y efectos cinemáticos optimizados.',
+    particleBudgetMultiplier: 0.75,
+    description: 'Sombras nítidas de 1024px, refracción térmica completa y óptica cinemática.',
   },
   high: {
     id: 'high',
@@ -215,16 +215,16 @@ export class GraphicsQualityManager {
 
     let needsAdjustment = false;
 
-    // Detect thermal or GPU bottleneck (<52 FPS)
-    if (avgFrametimeMs > 19.2) {
-      if (this.pacerThrottleScale > 0.82) {
-        this.pacerThrottleScale = Math.max(0.82, this.pacerThrottleScale - 0.06);
+    // Detect thermal or GPU bottleneck (<56 FPS / >17.8ms)
+    if (avgFrametimeMs > 17.8) {
+      if (this.pacerThrottleScale > 0.85) {
+        this.pacerThrottleScale = Math.max(0.85, this.pacerThrottleScale - 0.04);
         needsAdjustment = true;
       }
-    } else if (avgFrametimeMs < 14.8) {
-      // GPU has generous headroom (>67 FPS) -> gradually restore full target sharpness
+    } else if (avgFrametimeMs < 15.2) {
+      // GPU has generous headroom (>65 FPS) -> gradually restore full target sharpness
       if (this.pacerThrottleScale < 1.0) {
-        this.pacerThrottleScale = Math.min(1.0, this.pacerThrottleScale + 0.05);
+        this.pacerThrottleScale = Math.min(1.0, this.pacerThrottleScale + 0.03);
         needsAdjustment = true;
       }
     }

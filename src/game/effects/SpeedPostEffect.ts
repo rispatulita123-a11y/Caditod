@@ -32,18 +32,24 @@ export class SpeedPostEffect {
     `;
 
     const fragmentShader = `
+      precision mediump float;
+
       uniform float uSpeedRatio;
       uniform float uTime;
       uniform float uAspect;
       varying vec2 vUv;
 
       void main() {
+        if (uSpeedRatio <= 0.01) {
+          discard;
+        }
+
         // Aspect ratio correction: keep radial streaks strictly circular across all aspect ratios
         vec2 p = vec2((vUv.x - 0.5) * uAspect, vUv.y - 0.5);
         float dist = length(p);
 
         // Center 72% of screen is completely pristine and crystal-clear
-        if (dist < 0.35 * uAspect || uSpeedRatio <= 0.01) {
+        if (dist < 0.35 * uAspect || dist > 0.85 * uAspect) {
           discard;
         }
 
@@ -59,6 +65,9 @@ export class SpeedPostEffect {
 
         float edgeMask = smoothstep(0.38 * uAspect, 0.74 * uAspect, dist);
         float alpha = (streak1 * 0.7 + streak2 * 0.3) * edgeMask * uSpeedRatio * 0.30;
+        if (alpha <= 0.002) {
+          discard;
+        }
 
         // Subtle electric aerodynamic airflow tint on streaks
         vec3 streakColor = mix(vec3(0.85, 0.94, 1.0), vec3(1.0, 1.0, 1.0), streak1);

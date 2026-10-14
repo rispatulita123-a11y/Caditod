@@ -36,6 +36,8 @@ export class CinematicPostEffect {
     `;
 
     const fragmentShader = `
+      precision mediump float;
+
       uniform float uTime;
       uniform float uVignetteIntensity;
       uniform float uGrainIntensity;
@@ -49,8 +51,13 @@ export class CinematicPostEffect {
       void main() {
         vec2 uv = vUv;
         // Broadcast anamorphic framing with aspect-corrected spherical falloff
-        vec2 centered = vec2((uv.x - 0.5) * (uAspect / 1.777), (uv.y - 0.5) * 0.75);
+        vec2 centered = vec2((uv.x - 0.5) * (uAspect * 0.5627), (uv.y - 0.5) * 0.75);
         float distSq = dot(centered, centered);
+
+        // Fast early reject: in daytime when center of screen has zero vignette and no sun facing, skip fragment entirely
+        if (distSq < 0.20 && uSunFacing <= 0.38 && uIsNight <= 0.5) {
+          discard;
+        }
 
         // 1. Natural Neutral Optical Vignette (clean black lens edge falloff, zero color tinting)
         float vignette = smoothstep(0.68, 0.20, distSq);
@@ -75,21 +82,26 @@ export class CinematicPostEffect {
         // Night Broadcast 5600K Xenon Halation & Horizontal Anamorphic Flare
         float nightStreak = 0.0;
         if (uIsNight > 0.5) {
-          // Primary broadcast anamorphic horizontal flare at floodlight horizon
-          float h1 = exp(-pow((uv.y - 0.54) * 36.0, 2.0));
+          // Primary broadcast anamorphic horizontal flare at floodlight horizon (multiplication instead of pow)
+          float d1 = (uv.y - 0.54) * 36.0;
+          float h1 = exp(-(d1 * d1));
           // Secondary subtle optical flare streak at high aperture
-          float h2 = exp(-pow((uv.y - 0.44) * 48.0, 2.0)) * 0.40;
+          float d2 = (uv.y - 0.44) * 48.0;
+          float h2 = exp(-(d2 * d2)) * 0.40;
           // Soft 5600K floodlight corona glow in upper atmosphere
           float skyBloom = smoothstep(0.42, 0.88, uv.y) * 0.045 * (1.0 + uSpeedFactor * 0.45);
 
-          float combinedFlare = (h1 + h2) * (0.042 + uSpeedFactor * 0.038);
-          nightStreak = combinedFlare + skyBloom;
+          nightStreak = (h1 + h2) * (0.042 + uSpeedFactor * 0.038) + skyBloom;
         }
 
         // Vignette intensity in night races has crisp optical focus towards center
         float activeVignette = uIsNight > 0.5 ? vignetteFactor * 1.35 : vignetteFactor;
         float baseAlpha = activeVignette + veilingGlare + streak + nightStreak;
         
+        if (baseAlpha <= 0.001 && uIsNight <= 0.5) {
+          discard;
+        }
+
         // Continuous physical CMOS sensor micro-grain (eliminates 8-bit banding on dark skies & asphalt)
         float noise = 0.0;
         if (baseAlpha > 0.001 || uIsNight > 0.5) {
@@ -100,6 +112,9 @@ export class CinematicPostEffect {
 
         // 5. Total composite optical alpha
         float alpha = clamp(baseAlpha + noise, 0.0, 0.42);
+        if (alpha <= 0.001) {
+          discard;
+        }
 
         // Tint: Vignette corners are pure neutral black; solar glare is delicate warm gold in high sky; night is 5600K xenon ice-blue/sapphire
         vec3 neutralBlack = vec3(0.0, 0.0, 0.0);

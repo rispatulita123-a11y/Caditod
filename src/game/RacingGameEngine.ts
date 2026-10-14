@@ -444,13 +444,13 @@ export class RacingGameEngine {
     this.dirLight.shadow.mapSize.height = 1024;
     this.dirLight.shadow.camera.near = 5;
     this.dirLight.shadow.camera.far = 190;
-    const shadowD = 75; // Expanded to 75m radius so trees flanking straight and corner barriers project deep realistic shadows
+    const shadowD = 60; // Focused 60m radius delivering 1.56x higher shadow texel density and ~35% lower shadow caster overhead
     this.dirLight.shadow.camera.left = -shadowD;
     this.dirLight.shadow.camera.right = shadowD;
     this.dirLight.shadow.camera.top = shadowD;
     this.dirLight.shadow.camera.bottom = -shadowD;
-    this.dirLight.shadow.bias = -0.0002;
-    this.dirLight.shadow.normalBias = 0.010;
+    this.dirLight.shadow.bias = -0.0003;
+    this.dirLight.shadow.normalBias = 0.012;
     this.dirLight.shadow.camera.updateProjectionMatrix();
 
     this.scene.add(this.dirLight);

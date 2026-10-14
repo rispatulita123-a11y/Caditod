@@ -65,6 +65,8 @@ export class HeatHazeEffect {
     `;
 
     const fragmentShader = `
+      precision mediump float;
+
       uniform float uTime;
       uniform float uIntensity;
       uniform float uEngineTemp;
@@ -75,52 +77,32 @@ export class HeatHazeEffect {
       varying vec3 vWorldPosition;
       varying vec3 vViewPosition;
 
-      // Fast procedural 2D Perlin/Simplex hash turbulence
-      vec2 hash2(vec2 p) {
-        p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
-        return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
-      }
-
-      float noise(vec2 p) {
-        vec2 i = floor(p);
-        vec2 f = fract(p);
-        vec2 u = f * f * (3.0 - 2.0 * f);
-        return mix(mix(dot(hash2(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)),
-                       dot(hash2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), u.x),
-                   mix(dot(hash2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)),
-                       dot(hash2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), u.x), u.y);
-      }
-
-      // Fractional Brownian Motion (Turbulent convective vortices)
-      float fbm(vec2 p) {
-        float f = 0.0;
-        f += 0.5000 * noise(p); p = p * 2.02;
-        f += 0.2500 * noise(p); p = p * 2.03;
-        f += 0.1250 * noise(p); p = p * 2.01;
-        return f;
-      }
-
       void main() {
         if (uIntensity <= 0.01) {
+          discard;
+        }
+
+        // Shimmer gradient: intense near engine / exhaust (vUv.y near 0.0), fades smoothly backwards (vUv.y -> 1.0)
+        float lengthFalloff = smoothstep(0.0, 0.15, vUv.y) * (1.0 - smoothstep(0.45, 1.0, vUv.y));
+        // Side falloff (so edges are completely soft and invisible)
+        float widthFalloff = smoothstep(0.0, 0.35, vUv.x) * (1.0 - smoothstep(0.65, 1.0, vUv.x));
+        float shapeMask = lengthFalloff * widthFalloff;
+
+        if (shapeMask <= 0.005) {
           discard;
         }
 
         // Animated turbulent convection coordinates (rising and flowing backward)
         vec2 flowUV = vUv;
         float flowSpeed = 3.5 + uThrottle * 4.0 + uRpmRatio * 3.0;
-        
-        // Multi-frequency noise sampling for swirling air distortion
-        float n1 = fbm(flowUV * vec2(4.0, 10.0) + vec2(0.0, -uTime * flowSpeed));
-        float n2 = fbm(flowUV * vec2(8.0, 16.0) + vec2(n1 * 1.5, -uTime * flowSpeed * 1.4));
-        
-        // Shimmer gradient: intense near engine / exhaust (vUv.y near 0.0), fades smoothly backwards (vUv.y -> 1.0)
-        float lengthFalloff = smoothstep(0.0, 0.15, vUv.y) * (1.0 - smoothstep(0.4, 1.0, vUv.y));
-        // Side falloff (so edges are completely soft and invisible)
-        float widthFalloff = smoothstep(0.0, 0.35, vUv.x) * (1.0 - smoothstep(0.65, 1.0, vUv.x));
-        float shapeMask = lengthFalloff * widthFalloff;
+
+        // Ultra-fast SFU trigonometric harmonic turbulent vortices (Zero hash lookups)
+        float w1 = sin(flowUV.x * 14.0 + uTime * flowSpeed * 1.5) * cos(flowUV.y * 22.0 - uTime * flowSpeed * 2.0);
+        float w2 = sin(flowUV.x * 28.0 - flowUV.y * 36.0 - uTime * flowSpeed * 2.8) * 0.5;
+        float n2 = w1 * 0.65 + w2 * 0.35;
 
         // Dynamic thermal distortion amplitude
-        float tempFactor = clamp((uEngineTemp - 80.0) / 45.0, 0.0, 1.5);
+        float tempFactor = clamp((uEngineTemp - 80.0) * 0.0222, 0.0, 1.5);
         float totalDistortion = (0.25 + 0.75 * tempFactor) * (0.35 + 0.65 * (uThrottle + uRpmRatio * 0.5)) * uIntensity;
 
         // Optical Chromatic Aberration & Shimmer Glint
@@ -132,9 +114,12 @@ export class HeatHazeEffect {
         
         // Final alpha & thermal glow
         float alpha = shapeMask * totalDistortion * (0.35 + shimmer * 0.25);
-        
+        if (alpha <= 0.005) {
+          discard;
+        }
+
         // Subtle amber tint under extreme heat (>110°C)
-        vec3 finalColor = mix(heatColorEdge, heatColorCore, clamp((uEngineTemp - 95.0) / 30.0, 0.0, 1.0));
+        vec3 finalColor = mix(heatColorEdge, heatColorCore, clamp((uEngineTemp - 95.0) * 0.0333, 0.0, 1.0));
 
         gl_FragColor = vec4(finalColor, clamp(alpha * 0.45, 0.0, 0.65));
       }
@@ -180,6 +165,8 @@ export class HeatHazeEffect {
     `;
 
     const fragmentShader = `
+      precision mediump float;
+
       uniform float uTime;
       uniform float uIntensity;
       uniform float uEngineTemp;
@@ -197,18 +184,22 @@ export class HeatHazeEffect {
         float distToCar = distance(vWorldPos.xz, uCarPos.xz);
         // Mirage is visible from 5m to 45m ahead of driver
         float distMask = smoothstep(3.0, 12.0, distToCar) * (1.0 - smoothstep(32.0, 55.0, distToCar));
+        if (distMask <= 0.005) {
+          discard;
+        }
 
-        // Ultra-fast multi-harmonic wave interference (avoids 4 hash computations per fragment)
+        // Ultra-fast multi-harmonic wave interference
         vec2 waveUV = vWorldPos.xz * 0.35;
         float wave1 = sin(waveUV.x * 2.5 + uTime * 4.0) * cos(waveUV.y * 2.5 - uTime * 3.5);
         float wave2 = sin(waveUV.x * 4.8 - uTime * 2.2 + waveUV.y * 3.1) * 0.5 + 0.5;
         float mirageWave = (wave1 * 0.5 + wave2 * 0.5);
 
-        // Sky reflection glint (mirage illusion of watery shimmer on hot asphalt)
-        float glint = pow(max(0.0, mirageWave * 0.8 + 0.2), 3.0);
+        // Sky reflection glint (multiplication instead of pow)
+        float baseGlint = max(0.0, mirageWave * 0.8 + 0.2);
+        float glint = baseGlint * baseGlint * baseGlint;
         vec3 mirageSkyColor = vec3(0.85, 0.93, 1.0); // Sky reflection shimmer
 
-        float tempFactor = clamp((uEngineTemp - 80.0) / 40.0, 0.1, 1.2);
+        float tempFactor = clamp((uEngineTemp - 80.0) * 0.025, 0.1, 1.2);
         float alpha = distMask * glint * uIntensity * tempFactor;
 
         gl_FragColor = vec4(mirageSkyColor, clamp(alpha * 0.22, 0.0, 0.35));
